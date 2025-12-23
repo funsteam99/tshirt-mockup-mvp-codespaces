@@ -152,7 +152,20 @@ async def mockup(
     # background removal (keying)
     design_bgra = _remove_bg_keying(design_bgra, mode=bg_mode, thr=bg_thr)
 
-    H, W = base_bgra.shape[:2]
+    # ✅ NEW: 找出底圖「非透明」的衣服本體區域，避免透明 padding 造成座標錯置
+    base_alpha = base_bgra[..., 3]
+    ys, xs = np.where(base_alpha > 0)
+
+    # 如果底圖沒有透明（例如 JPG 或 alpha 全滿），就用整張圖
+    if len(xs) == 0 or len(ys) == 0:
+        x0, y0, x1, y1 = 0, 0, base_bgra.shape[1], base_bgra.shape[0]
+    else:
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+
+    # 裁出衣服本體區（之後透視、shading 都在這個區域做）
+    base_crop = base_bgra[y0:y1, x0:x1].copy()
+    Hc, Wc = base_crop.shape[:2]
 
     pts = [p.strip() for p in points.replace("\n", " ").split(",") if p.strip() != ""]
     if len(pts) != 8:
@@ -167,23 +180,32 @@ async def mockup(
         ],
         dtype=np.float32,
     )
+    # ✅ NEW: points 轉成「裁切後」的座標（減掉 padding 偏移）
+    dst[:, 0] -= x0
+    dst[:, 1] -= y0
 
     dh, dw = design_bgra.shape[:2]
     src = np.array([[0, 0], [dw - 1, 0], [dw - 1, dh - 1], [0, dh - 1]], dtype=np.float32)
 
     M = cv2.getPerspectiveTransform(src, dst)
-    warped = cv2.warpPerspective(design_bgra, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_TRANSPARENT)
+    warped = cv2.warpPerspective(
+        design_bgra, M, (Wc, Hc),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_TRANSPARENT
+    )
 
     alpha = warped[..., 3].copy()
     opacity = float(np.clip(opacity, 0.0, 1.0))
     alpha = (alpha.astype(np.float32) * opacity).astype(np.uint8)
-
+    # ✅ 防呆：opacity 太低時，shading 會很容易把底圖紋理放大造成「混亂」
+    if opacity < 0.75:
+        shading = 0
     if int(shading) == 1:
         warped2 = warped.copy()
         warped2[..., 3] = alpha
         warped = _apply_shading_detail(
             warped2,
-            base_bgra[..., :3],
+            base_crop[..., :3],
             (alpha > 0).astype(np.uint8) * 255,
             strength=float(shading_strength),
         )
@@ -191,7 +213,7 @@ async def mockup(
     else:
         warped[..., 3] = alpha
 
-    out = base_bgra.copy().astype(np.float32)
+    out = base_crop.copy().astype(np.float32)
     w_rgb = warped[..., :3].astype(np.float32)
     a = (alpha.astype(np.float32) / 255.0)[..., None]
 
@@ -199,6 +221,10 @@ async def mockup(
     out[..., 3] = 255
 
     out_u8 = np.clip(out, 0, 255).astype(np.uint8)
+    # ✅ NEW: 把裁切區合成結果貼回原底圖
+    final = base_bgra.copy()
+    final[y0:y1, x0:x1] = out_u8
+    out_u8 = final
 
     out_id = uuid.uuid4().hex[:16]
     out_path = RESULTS_DIR / f"{out_id}.png"

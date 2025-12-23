@@ -102,37 +102,46 @@ export default function App() {
     return [tl, tr, br, bl]
   }
 
-  async function onMockup() {
-    if (!baseFile || !designFile || !baseImg || !designImg) return
-    const ptsStage = getDesignCornerPointsInStage()
-    if (!ptsStage) return
+async function onMockup() {
+  if (!baseFile || !designFile || !baseImg || !designImg) return
 
-    const scaleX = baseImg.naturalWidth / stageW
-    const scaleY = baseImg.naturalHeight / stageH
-    const pts = ptsStage.map(p => ({ x: p.x * scaleX, y: p.y * scaleY }))
-    const pointsStr = pts.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(',')
+  // ✅ 1) 強制把 Konva 最後一個拖拉/變形 frame 結算
+  const node = designRef.current
+  node?.getLayer()?.batchDraw()
+  node?.getStage()?.batchDraw()
 
-    setBusy(true)
-    setResultUrl('')
-    try {
-      const fd = new FormData()
-      fd.append('base_photo', baseFile)
-      fd.append('design', designFile)
-      fd.append('points', pointsStr)
-      fd.append('opacity', String(clamp(opacity, 0, 1)))
-      fd.append('shading', shading ? '1' : '0')
-      fd.append('shading_strength', String(clamp(shadingStrength, 0, 1)))
-      fd.append('bg_mode', bgMode)
-      fd.append('bg_thr', String(clamp(bgThr, 0, 100)))
+  const ptsStage = getDesignCornerPointsInStage()
+  if (!ptsStage) return
 
-      const r = await fetch('/api/mockup', { method: 'POST', body: fd })
-      const d = await r.json()
-      if (d.result_url) setResultUrl(`/api${d.result_url}`)
-      else alert(d.error || '生成失敗')
-    } finally {
-      setBusy(false)
-    }
+  const scaleX = baseImg.naturalWidth / stageW
+  const scaleY = baseImg.naturalHeight / stageH
+  const pts = ptsStage.map(p => ({ x: p.x * scaleX, y: p.y * scaleY }))
+  const pointsStr = pts.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(',')
+
+  setBusy(true)
+  setResultUrl('')
+  try {
+    const fd = new FormData()
+    fd.append('base_photo', baseFile)
+    fd.append('design', designFile)
+    fd.append('points', pointsStr)
+    fd.append('opacity', String(clamp(opacity, 0, 1)))
+    fd.append('shading', shading ? '1' : '0')
+    fd.append('shading_strength', String(clamp(shadingStrength, 0, 1)))
+    fd.append('bg_mode', bgMode)
+    fd.append('bg_thr', String(clamp(bgThr, 0, 100)))
+
+    const r = await fetch('/api/mockup', { method: 'POST', body: fd })
+    const d = await r.json()
+
+    // ✅ 2) cache-busting，避免 <img> 顯示上一張
+    if (d.result_url) setResultUrl(`/api${d.result_url}?v=${Date.now()}`)
+    else alert(d.error || '生成失敗')
+  } finally {
+    setBusy(false)
   }
+}
+
 
   const canRun = !!baseFile && !!designFile && !busy
 
