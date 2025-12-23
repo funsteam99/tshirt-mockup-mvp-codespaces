@@ -1,5 +1,5 @@
 {
-  "name": "tshirt-mockup-web",
+  "name": "tshirt-mockup-web-dragbox",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "konva": "^9.3.18",
+    "react-konva": "^18.2.10"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

@@ -71,11 +71,10 @@ def health():
 async def mockup(
     base_photo: UploadFile = File(...),
     design: UploadFile = File(...),
-    points: str = Form(...),
+    points: str = Form(...),  # x0,y0,x1,y1,x2,y2,x3,y3 in base original pixels
     opacity: float = Form(0.92),
     shading: int = Form(1),
 ):
-    # Load images
     base_pil = _rgba_pil_from_upload(base_photo)
     design_pil = _rgba_pil_from_upload(design)
 
